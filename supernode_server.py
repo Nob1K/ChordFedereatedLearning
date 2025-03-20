@@ -7,6 +7,7 @@ from thrift import Thrift
 from thrift.transport import TSocket
 from thrift.transport import TTransport
 from thrift.protocol import TBinaryProtocol
+from thrift.Thrift import TException
 from supernode import supernode
 from supernode.ttypes import node
 from thrift.server import TServer
@@ -16,22 +17,22 @@ import threading
 
 MAX_NODES = 10
 
+# lock for things below
+global_lock = Lock()
 busy = False
-busy_var_lock = Lock()
-
-online_nodes = {}
+online_nodes = {} # key is node_id, val is node(custom ds)
+node_map = {} # key is port, val is ip
+next_id = 0
 
 class SupernodeHandler:
     def __init__(self):
-        self.node_map = self._load_compute_nodes()
-        self.lock = threading.Lock()
-        self.online_nodes = {}
-        self.next_id = 0
         self.pending_join = None
+        global node_map
+        node_map = self._load_compute_nodes()
         print("✅ Supernode initialized")
 
+    # load compute node info from compute_nodes.txt
     def _load_compute_nodes(self):
-        """加载compute_nodes.txt配置文件"""
         node_map = {}
         try:
             with open('compute_nodes.txt', 'r') as f:
@@ -42,52 +43,58 @@ class SupernodeHandler:
             raise RuntimeError("compute_nodes.txt not found")
         return node_map
 
+    # called by a compute node to join the DHT
     def request_join(self, node_port):
         global busy
-        if busy:
-            return -1
-        else:
-            with busy_var_lock:
-                busy = True
+        global next_id
+        print(busy)
+        with global_lock:
+            if busy:
+                return -1
             print(f"📨 Received join request from port {node_port}")
-            if node_port not in self.node_map:
-                raise TApplicationException(
-                    TApplicationException.INVALID_DATA, 
-                    "Invalid port number"
-                )
-            
-            # 分配节点ID
-            node_id = self.next_id % MAX_NODES
-            self.next_id += 1
-            self.pending_join = (node_port, node_id)  # 暂存信息
+            if node_port not in node_map.keys():
+                raise TException("Invalid port number")
+            if next_id >= MAX_NODES:
+                print("Exceeded max node count")
+                return -1
+            busy = True
+            node_id = next_id
+            next_id += 1
+            self.pending_join = (node_port, node_id)
             return node_id
 
     def confirm_join(self):
-        with self.lock:
+        global busy
+        global online_nodes
+        with global_lock:
             print("🟢 Confirm_join called")
             if not self.pending_join:
+                print("No node called request_join yet")
                 return False
             node_port, node_id = self.pending_join
-            ip = self.node_map[node_port]
-            self.online_nodes[node_id] = node(ip, node_port)
+            ip = node_map[node_port]
+            online_nodes[node_id] = node(ip, node_port)
             self.pending_join = None
             print(f"🟢 Node {node_id} (Port: {node_port}) confirmed")
-            return True
+            print("online nodes:", online_nodes)
+            busy = False
+        return True
 
+    # return a node containing the random node info, if no nodes in the ring, return "" and 0
     def get_node(self):
-        print("🔀 Providing random node")
-        if not self.online_nodes:
-            raise TApplicationException(...)
-        node_id = random.choice(list(self.online_nodes.keys()))
-        ip, port = self.online_nodes[node_id]
-        return node(ip=ip, port=port)
+        with global_lock:
+            print("🔀 Providing random node")
+            if not online_nodes:
+                return node(ip="", port=0)
+            node_id = random.choice(list(online_nodes.keys()))
+            return online_nodes[node_id]
 
 
 
 def main():
     
     if len(sys.argv) < 2:
-        print("python3 supernode.py <port>")
+        print("python3 supernode_server.py <port>")
         return
     input_port = int(sys.argv[1])
 
