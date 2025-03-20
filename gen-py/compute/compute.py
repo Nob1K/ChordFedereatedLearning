@@ -35,7 +35,12 @@ class Iface(object):
         """
         pass
 
-    def fix_fingers(self):
+    def fix_fingers(self, start_id):
+        """
+        Parameters:
+         - start_id
+
+        """
         pass
 
     def print_info(self):
@@ -97,13 +102,19 @@ class Client(Iface):
             return result.success
         raise TApplicationException(TApplicationException.MISSING_RESULT, "get_model failed: unknown result")
 
-    def fix_fingers(self):
-        self.send_fix_fingers()
+    def fix_fingers(self, start_id):
+        """
+        Parameters:
+         - start_id
+
+        """
+        self.send_fix_fingers(start_id)
         self.recv_fix_fingers()
 
-    def send_fix_fingers(self):
+    def send_fix_fingers(self, start_id):
         self._oprot.writeMessageBegin('fix_fingers', TMessageType.CALL, self._seqid)
         args = fix_fingers_args()
+        args.start_id = start_id
         args.write(self._oprot)
         self._oprot.writeMessageEnd()
         self._oprot.trans.flush()
@@ -216,7 +227,7 @@ class Processor(Iface, TProcessor):
         iprot.readMessageEnd()
         result = fix_fingers_result()
         try:
-            self._handler.fix_fingers()
+            self._handler.fix_fingers(args.start_id)
             msg_type = TMessageType.REPLY
         except TTransport.TTransportException:
             raise
@@ -446,7 +457,15 @@ get_model_result.thrift_spec = (
 
 
 class fix_fingers_args(object):
+    """
+    Attributes:
+     - start_id
 
+    """
+
+
+    def __init__(self, start_id=None,):
+        self.start_id = start_id
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -457,6 +476,11 @@ class fix_fingers_args(object):
             (fname, ftype, fid) = iprot.readFieldBegin()
             if ftype == TType.STOP:
                 break
+            if fid == 1:
+                if ftype == TType.I32:
+                    self.start_id = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -467,6 +491,10 @@ class fix_fingers_args(object):
             oprot.trans.write(oprot._fast_encode(self, [self.__class__, self.thrift_spec]))
             return
         oprot.writeStructBegin('fix_fingers_args')
+        if self.start_id is not None:
+            oprot.writeFieldBegin('start_id', TType.I32, 1)
+            oprot.writeI32(self.start_id)
+            oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
 
@@ -485,6 +513,8 @@ class fix_fingers_args(object):
         return not (self == other)
 all_structs.append(fix_fingers_args)
 fix_fingers_args.thrift_spec = (
+    None,  # 0
+    (1, TType.I32, 'start_id', None, None, ),  # 1
 )
 
 

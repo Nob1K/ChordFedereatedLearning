@@ -12,12 +12,23 @@ from supernode.ttypes import node
 from thrift.server import TServer
 from threading import Lock
 
+busy = False
+busy_var_lock = Lock()
+
+
+
 class SupernodeHandler:
     def __init__(self):
-        self.node = node(1, 2)
-        self.lock = Lock()
+        pass
 
     def request_join(self, node_port):
+        global busy
+        if busy:
+            return -1
+        else:
+            with busy_var_lock:
+                busy = True
+            
         return 0 
 
     def confirm_join(self):
@@ -42,7 +53,7 @@ def main():
 
     server = TServer.TThreadedServer(processor, transport, transport_factory, protocol_factory)
     server.serve()
-    
+
 
 
 if __name__ == '__main__':

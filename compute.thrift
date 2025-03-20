@@ -12,7 +12,7 @@ struct weights {
 service compute {
     oneway void put_data(1:string filename),
     weights get_model(1:string filename),
-    void fix_fingers(),
+    void fix_fingers(1: i32 start_id),
     void print_info(),
     
 }
