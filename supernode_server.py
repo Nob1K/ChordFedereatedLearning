@@ -63,6 +63,7 @@ class SupernodeHandler:
             self.pending_join = (node_port, node_id)
             return node_id
 
+    # compute node pending join calls this after all finger table entry in the DHT is properly updated (also predecessor and successor)
     def confirm_join(self):
         global busy
         global online_nodes
@@ -84,6 +85,7 @@ class SupernodeHandler:
     def get_node(self):
         with global_lock:
             print("🔀 Providing random node")
+            # provide an error node if client tries to connect with no nodes in system
             if not online_nodes:
                 return node(ip="", port=0)
             node_id = random.choice(list(online_nodes.keys()))
