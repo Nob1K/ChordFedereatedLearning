@@ -4,6 +4,9 @@ import os
 import threading
 import hashlib
 
+sys.path.append('gen-py')
+sys.path.insert(0, glob.glob('../thrift-0.19.0/lib/py/build/lib*')[0])
+
 import thrift
 from thrift.transport import TSocket
 from thrift.transport import TTransport
@@ -13,10 +16,6 @@ from thrift.server import TServer
 from compute import compute
 from compute.ttypes import node, weights
 from supernode import supernode
-
-
-sys.path.append('gen-py')
-sys.path.insert(0, glob.glob('../thrift-0.19.0/lib/py/build/lib*')[0])
 
 MAX_NODES = 10
 M = 4  #4 bits for hash table index
@@ -31,7 +30,7 @@ def hash_to_number(input_string):
 
 class ComputeHandler:
     def __init__(self, port, super_ip, super_port):
-        self.ip = _load_compute_nodes()[port]
+        self.ip = self._load_compute_nodes()[port]
         self.port = port
         self.node_id = None
         self.supernode_ip = super_ip
@@ -44,12 +43,13 @@ class ComputeHandler:
         self.successor = None
         self.finger_table = [{}] * FINGER_TABLE_SIZE
         
-        self.models = {}
+        self.models = []
         self.data_files = set()
         
         self.join_network()
         
-        print(f"✅ Compute node initialized with IP: {ip}, Port: {port}, ID: {self.node_id}")
+        print(f"✅ Compute node initialized with IP: {self.ip}, Port: {port}, ID: {self.node_id}")
+        self.print_info()
 
     def _load_compute_nodes(self):
         node_map = {}
@@ -342,36 +342,36 @@ class ComputeHandler:
     #             # Return a weights object with error status
     #             return weights(w=[[0.0]], v=[[0.0]], status=-1)
                 
-    # def print_info(self):
-    #     """Print information about this node's state."""
-    #     with self.lock:
-    #         print("\n----- Node Information -----")
-    #         print(f"Node ID: {self.node_id}")
-    #         print(f"IP:Port: {self.ip}:{self.port}")
+    def print_info(self):
+        """Print information about this node's state."""
+        with self.lock:
+            print("\n----- Node Information -----")
+            print(f"Node ID: {self.node_id}")
+            print(f"IP:Port: {self.ip}:{self.port}")
             
-    #         if self.predecessor:
-    #             print(f"Predecessor: {self.predecessor.ip}:{self.predecessor.port} (ID: {self.id_from_port(self.predecessor.port)})")
-    #         else:
-    #             print("Predecessor: None")
+            if self.predecessor:
+                print(f"Predecessor: {self.predecessor["node"].ip}:{self.predecessor["node"].port} (ID: {self.predecessor["id"]})")
+            else:
+                print("Predecessor: None")
                 
-    #         print(f"Successor: {self.successor.ip}:{self.successor.port} (ID: {self.successor_id()})")
+            print(f"Successor: {self.successor["node"].ip}:{self.successor["node"].port} (ID: {self.successor["id"]})")
             
-    #         print("\nFinger Table:")
-    #         for i in range(FINGER_TABLE_SIZE):
-    #             if self.finger_table[i]:
-    #                 print(f"  [{i}]: {self.finger_table[i].ip}:{self.finger_table[i].port} (ID: {self.id_from_port(self.finger_table[i].port)})")
-    #             else:
-    #                 print(f"  [{i}]: None")
+            print("\nFinger Table:")
+            for i in range(FINGER_TABLE_SIZE):
+                if self.finger_table[i]:
+                    print(f" [{i}] - start: {self.finger_table[i]["start"]}, successor ID: {self.finger_table[i]["successor_id"]}, socket: {self.finger_table[i]["node"].ip}:{self.finger_table[i]["node"].port}")
+                else:
+                    print(f" [{i}] - None")
                     
-    #         print("\nStored Data Files:")
-    #         for file in self.data_files:
-    #             print(f"  - {file}")
+            print("\nStored Data Files:")
+            for file in self.data_files:
+                print(f"  - {file}")
                 
-    #         print("\nStored Models:")
-    #         for filename in self.models:
-    #             print(f"  - {filename}")
+            # print("\nStored Models:")
+            # for filename in self.models:
+            #     print(f"  - {filename}")
                 
-    #         print("----------------------------\n")
+            print("----------------------------\n")
 
 
 
@@ -391,7 +391,7 @@ def start_server(port, super_ip, super_port):
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("python3 compute_server.py <supernode_ip> <supernode_port> <compute_port>")
-        return
+        sys.exit(1)
     super_ip = sys.argv[1]
     super_port = int(sys.argv[2])
     compute_port = int(sys.argv[3])
