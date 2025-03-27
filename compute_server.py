@@ -16,6 +16,7 @@ from thrift.server import TServer
 from compute import compute
 from compute.ttypes import node, weights
 from supernode import supernode
+from ML import ML
 
 MAX_NODES = 10
 M = 4  #4 bits for hash table index
@@ -43,7 +44,7 @@ class ComputeHandler:
         self.successor = None
         self.finger_table = [{}] * FINGER_TABLE_SIZE
         
-        self.models = []
+        self.models = {}
         self.data_files = set()
         
         self.join_network()
@@ -115,6 +116,197 @@ class ComputeHandler:
             print(f"❌ Error joining network: {e}")
             sys.exit(1)
 
+    def find_successor(self, id):
+        """Find the successor node for a given ID."""
+        curr_id = self.node_id
+        current = {"node": node(self.ip, self.port), "id": curr_id}
+        
+        # 1 node
+        if self.successor.port == self.port:
+            return current
+        
+        # current node is preceding id
+        if self._is_between(id, curr_id, self.successor_id()):
+            return self.successor
+        
+        # forward request
+        try:
+            next_node = self.closest_preceding_node(id)
+            if next_node is None:
+                return self.successor
+
+            next_node = next_node["node"]
+            
+            transport = TSocket.TSocket(next_node.ip, next_node.port)
+            transport = TTransport.TBufferedTransport(transport)
+            protocol = TBinaryProtocol.TBinaryProtocol(transport)
+            client = compute.Client(protocol)
+            transport.open()
+            result = client.find_successor(id)
+            transport.close()
+            
+            return result
+        
+        except Exception as e:
+            print(f"❌ Error finding successor: {e}")
+            return current  # Return self if there's an error
+
+    def find_predecessor(self, id):
+        """Find the node preceding a given ID."""
+        curr_id = self.node_id
+        current = {"node":node(self.ip, self.port), "id":curr_id}
+        
+        # one node in the network
+        if self.successor.port == self.port:
+            return current
+        
+        if self._is_between(id, curr_id, self.successor_id()):
+            return current
+            
+        try:
+            next_node = self.closest_preceding_node(id)
+            if next_node is None:
+                return current
+            next_node = next_node["node"]
+            # Connect to the next node
+            transport = TSocket.TSocket(next_node.ip, next_node.port)
+            transport = TTransport.TBufferedTransport(transport)
+            protocol = TBinaryProtocol.TBinaryProtocol(transport)
+            client = compute.Client(protocol)
+            transport.open()
+            result = client.find_predecessor(id)
+            transport.close()
+            
+            return result
+                
+        except Exception as e:
+            print(f"❌ Error finding predecessor: {e}")
+            return current
+
+    def successor_id(self):
+        """Get the ID of the successor node."""
+        return self.successor["id"]
+    
+
+    def closest_preceding_node(self, hash):
+        """Find the closest preceding node for a given hash."""
+        with self.lock:
+            for i in range(FINGER_TABLE_SIZE - 1, -1, -1):
+                finger_start = self.finger_table[i]["start"]
+                finger_successor_id = self.finger_table[i]["successor_id"]
+                
+                if self._is_between(finger_successor_id, self.node_id, hash):
+                    return self.finger_table[i]
+        
+        return None
+
+    def get_predecessor(self):
+        """Return this node's predecessor."""
+        with self.lock:
+            return self.predecessor if self.predecessor else node("", 0)
+
+    def _is_between(self, id, start, end):
+        """Check if id is in the range (start, end]."""
+        if start < end:
+            return start < id <= end
+        elif start > end:
+            return id > start or id <= end
+        else:
+            return id != start
+
+    def put_data(self, filename):
+        """Store a data file on the node responsible"""
+        print(f"📥 Received put_data request for {filename}")
+        hash = hash_to_number(filename)
+        # base case
+        if hash <= self.node_id and hash > self.predecessor["id"]:
+            model = ML.mlp()
+            model.init_training_random(filename, 26, 20)
+            model.train(0.0001, 250)
+            v, w = model.get_weights()
+            curr_weights = weights(w, v, 0)
+            with self.model_lock:
+                self.models[filename] = curr_weights
+        # forward to other node
+        else:
+            finger = self.closest_preceding_node(hash)
+            # current node is closest preceding finger
+            if finger is None:
+                node = self.successor["node"]
+            # forward to closest preceding finger  
+            else:
+                node = finger["node"]
+            transport = TSocket.TSocket(node.ip, node.port)
+            transport = TTransport.TBufferedTransport(transport)
+            protocol = TBinaryProtocol.TBinaryProtocol(transport)
+            client = compute.Client(protocol)
+            transport.open()
+            client.put_data(filename)
+            transport.close()
+                
+                
+    def get_model(self, filename):
+        """Return a model weights for a given filename."""
+        print(f"📤 Received get_model request for {filename}")
+        hash = hash_to_number(filename)
+        # base case
+        if hash <= self.node_id and hash > self.predecessor["id"]:
+            with self.model_lock:
+                if filename in self.models.keys():
+                    return self.models[filename]
+                else:
+                    # Return a weights object with wait status
+                    return weights(w=[[0.0]], v=[[0.0]], status=1)
+        # forward to other node
+        else:
+            finger = self.closest_preceding_node(hash)
+            # current node is closest preceding finger
+            if finger is None:
+                node = self.successor["node"]
+            # forward to closest preceding finger  
+            else:
+                node = finger["node"]
+            transport = TSocket.TSocket(node.ip, node.port)
+            transport = TTransport.TBufferedTransport(transport)
+            protocol = TBinaryProtocol.TBinaryProtocol(transport)
+            client = compute.Client(protocol)
+            transport.open()
+            model = client.get_model(filename)
+            transport.close()
+            return model
+        
+                
+    def print_info(self):
+        """Print information about this node's state."""
+        with self.lock:
+            print("\n----- Node Information -----")
+            print(f"Node ID: {self.node_id}")
+            print(f"IP:Port: {self.ip}:{self.port}")
+            
+            if self.predecessor:
+                print(f"Predecessor: {self.predecessor["node"].ip}:{self.predecessor["node"].port} (ID: {self.predecessor["id"]})")
+            else:
+                print("Predecessor: None")
+                
+            print(f"Successor: {self.successor["node"].ip}:{self.successor["node"].port} (ID: {self.successor["id"]})")
+            
+            print("\nFinger Table:")
+            for i in range(FINGER_TABLE_SIZE):
+                if self.finger_table[i]:
+                    print(f" [{i}] - start: {self.finger_table[i]["start"]}, successor ID: {self.finger_table[i]["successor_id"]}, socket: {self.finger_table[i]["node"].ip}:{self.finger_table[i]["node"].port}")
+                else:
+                    print(f" [{i}] - None")
+                    
+            print("\nStored Data Files:")
+            for file in self.data_files:
+                print(f"  - {file}")
+                
+            # print("\nStored Models:")
+            # for filename in self.models:
+            #     print(f"  - {filename}")
+                
+            print("----------------------------\n")
+    
     # def _init_finger_table(self, bootstrap_node):
         """Initialize finger table using an existing node."""
         # todo:
@@ -184,125 +376,8 @@ class ComputeHandler:
                     
         #     except Exception as e:
         #         print(f"❌ Error updating others: {e}")
-
-    # def find_successor(self, id):
-        """Find the node responsible for a given ID."""
-        # todo
-        # with self.lock:
-        #     # If ID is between us and our successor, return successor
-        #     if self._is_between(id, self.node_id, self.successor_id()):
-        #         return self.successor
-                
-        #     # Otherwise, find the closest preceding node and ask it
-        #     n_prime = self.closest_preceding_node(id)
-            
-        #     # If it's us, return our successor
-        #     if n_prime.port == self.port:
-        #         return self.successor
-                
-        #     # Ask n_prime to find the successor
-        #     try:
-        #         transport = TSocket.TSocket(n_prime.ip, n_prime.port)
-        #         transport = TTransport.TBufferedTransport(transport)
-        #         protocol = TBinaryProtocol.TBinaryProtocol(transport)
-        #         client = compute.Client(protocol)
-                
-        #         transport.open()
-        #         result = client.find_successor(id)
-        #         transport.close()
-                
-        #         return result
-        #     except Exception as e:
-        #         print(f"❌ Error finding successor: {e}")
-        #         return node(self.ip, self.port)  # Return self if error
-
-    # def find_predecessor(self, id):
-        """Find the node preceding a given ID."""
-        # todo
-        # current = node(self.ip, self.port)  # Start with self
-        # curr_id = self.node_id
         
-        # # If we're alone in the network
-        # if self.successor.port == self.port:
-        #     return current
-            
-        # # If the ID is between us and our successor
-        # if self._is_between(id, curr_id, self.successor_id()):
-        #     return current
-            
-        # # Otherwise, ask other nodes
-        # try:
-        #     # Connect to the current node (which is us initially)
-        #     transport = TSocket.TSocket(current.ip, current.port)
-        #     transport = TTransport.TBufferedTransport(transport)
-        #     protocol = TBinaryProtocol.TBinaryProtocol(transport)
-        #     client = compute.Client(protocol)
-            
-        #     transport.open()
-        #     next_node = client.closest_preceding_node(id)
-        #     transport.close()
-            
-        #     # If the next node is us, return us
-        #     if next_node.port == self.port:
-        #         return current
-                
-        #     # Connect to the next node
-        #     transport = TSocket.TSocket(next_node.ip, next_node.port)
-        #     transport = TTransport.TBufferedTransport(transport)
-        #     protocol = TBinaryProtocol.TBinaryProtocol(transport)
-        #     client = compute.Client(protocol)
-            
-        #     transport.open()
-        #     result = client.find_predecessor(id)
-        #     transport.close()
-            
-        #     return result
-                
-        # except Exception as e:
-        #     print(f"❌ Error finding predecessor: {e}")
-        #     return current  # Return self if error
-
-    # def successor_id(self):
-    #     """Get the ID of the successor node."""
-    #     return self.node_id if self.successor.port == self.port else self.id_from_port(self.successor.port)
-    
-    # def id_from_port(self, port):
-    #     """Get the ID for a given port. In this simplified version, we assume port maps directly to ID."""
-    #     # This is a simplification. In practice, you'd need a lookup table or query the supernode
-    #     # Here we assume the supernode assigns IDs sequentially from 0 to MAX_NODES-1
-    #     return port % MAX_NODES  # Simple mapping for testing
-
-    # def closest_preceding_node(self, id):
-    #     """Find the closest preceding node for an ID in the finger table."""
-    #     with self.lock:
-    #         for i in range(FINGER_TABLE_SIZE - 1, -1, -1):
-    #             if self.finger_table[i]:
-    #                 finger_id = self.id_from_port(self.finger_table[i].port)
-    #                 if self._is_between(finger_id, self.node_id, id):
-    #                     return self.finger_table[i]
-    #         return node(self.ip, self.port)  # Return self if no preceding node found
-
-    # def get_predecessor(self):
-    #     """Return this node's predecessor."""
-    #     with self.lock:
-    #         return self.predecessor if self.predecessor else node("", 0)
-
-    # def notify(self, n_prime):
-    #     """Notify this node that n_prime thinks it might be our predecessor."""
-    #     with self.lock:
-    #         if not self.predecessor:
-    #             self.predecessor = n_prime
-    #             print(f"📝 Updated predecessor to {n_prime.ip}:{n_prime.port}")
-    #             return
-                
-    #         prime_id = self.id_from_port(n_prime.port)
-    #         pred_id = self.id_from_port(self.predecessor.port)
-                
-    #         if self._is_between(prime_id, pred_id, self.node_id):
-    #             self.predecessor = n_prime
-    #             print(f"📝 Updated predecessor to {n_prime.ip}:{n_prime.port}")
-
-    # def fix_fingers(self, start_id):
+        # def fix_fingers(self, start_id):
     #     """Update a finger table entry."""
     #     with self.lock:
     #         try:
@@ -317,61 +392,6 @@ class ComputeHandler:
                 
     #         except Exception as e:
     #             print(f"❌ Error fixing finger {start_id}: {e}")
-
-    # def _is_between(self, id, start, end):
-    #     """Check if id is in the range (start, end]."""
-    #     # Handle wrap-around
-    #     if start < end:
-    #         return start < id <= end
-    #     elif start > end:  # Wrapping around the circle
-    #         return id > start or id <= end
-    #     else:  # start == end
-    #         return id != start  # Any ID except start is between start and itself
-
-    # def put_data(self, filename):
-    #     """Store a data file on this node."""
-    #     print(f"📥 Received put_data request for {filename}")
-
-    # def get_model(self, filename):
-    #     """Return a model weights for a given filename."""
-    #     print(f"📤 Received get_model request for {filename}")
-    #     with self.model_lock:
-    #         if filename in self.models:
-    #             return self.models[filename]
-    #         else:
-    #             # Return a weights object with error status
-    #             return weights(w=[[0.0]], v=[[0.0]], status=-1)
-                
-    def print_info(self):
-        """Print information about this node's state."""
-        with self.lock:
-            print("\n----- Node Information -----")
-            print(f"Node ID: {self.node_id}")
-            print(f"IP:Port: {self.ip}:{self.port}")
-            
-            if self.predecessor:
-                print(f"Predecessor: {self.predecessor["node"].ip}:{self.predecessor["node"].port} (ID: {self.predecessor["id"]})")
-            else:
-                print("Predecessor: None")
-                
-            print(f"Successor: {self.successor["node"].ip}:{self.successor["node"].port} (ID: {self.successor["id"]})")
-            
-            print("\nFinger Table:")
-            for i in range(FINGER_TABLE_SIZE):
-                if self.finger_table[i]:
-                    print(f" [{i}] - start: {self.finger_table[i]["start"]}, successor ID: {self.finger_table[i]["successor_id"]}, socket: {self.finger_table[i]["node"].ip}:{self.finger_table[i]["node"].port}")
-                else:
-                    print(f" [{i}] - None")
-                    
-            print("\nStored Data Files:")
-            for file in self.data_files:
-                print(f"  - {file}")
-                
-            # print("\nStored Models:")
-            # for filename in self.models:
-            #     print(f"  - {filename}")
-                
-            print("----------------------------\n")
 
 
 
