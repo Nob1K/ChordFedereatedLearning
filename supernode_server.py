@@ -22,7 +22,8 @@ global_lock = Lock()
 busy = False
 online_nodes = {} # key is node_id, val is node(custom ds)
 node_map = {} # key is port, val is ip
-next_id = 0
+numbers = random.sample(range(10), 10)
+next_index = 0
 
 class SupernodeHandler:
     def __init__(self):
@@ -46,20 +47,20 @@ class SupernodeHandler:
     # called by a compute node to join the DHT
     def request_join(self, node_port):
         global busy
-        global next_id
-        print(busy)
+        global next_index
+        global numbers
         with global_lock:
             if busy:
                 return -1
             print(f"📨 Received join request from port {node_port}")
             if node_port not in node_map.keys():
                 raise TException("Invalid port number")
-            if next_id >= MAX_NODES:
+            if next_index >= MAX_NODES:
                 print("Exceeded max node count")
                 return -1
             busy = True
-            node_id = next_id
-            next_id += 1
+            node_id = numbers[next_index]
+            next_index += 1
             self.pending_join = (node_port, node_id)
             return node_id
 
@@ -74,7 +75,7 @@ class SupernodeHandler:
                 return False
             node_port, node_id = self.pending_join
             ip = node_map[node_port]
-            online_nodes[node_id] = node(ip, node_port)
+            online_nodes[node_id] = node(ip, node_port, node_id)
             self.pending_join = None
             print(f"🟢 Node {node_id} (Port: {node_port}) confirmed")
             print("online nodes:", online_nodes)
@@ -87,7 +88,7 @@ class SupernodeHandler:
             print("🔀 Providing random node")
             # provide an error node if client tries to connect with no nodes in system
             if not online_nodes:
-                return node(ip="", port=0)
+                return node(ip="", port=0, id=-1)
             node_id = random.choice(list(online_nodes.keys()))
             return online_nodes[node_id]
 

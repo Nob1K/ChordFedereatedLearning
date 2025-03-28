@@ -1,6 +1,7 @@
 struct node {
     1: string ip,
-    2: i32 port
+    2: i32 port,
+    3: i32 id
 }
 
 struct weights {
@@ -12,7 +13,10 @@ struct weights {
 service compute {
     oneway void put_data(1:string filename),
     weights get_model(1:string filename),
-    void fix_fingers(1: i32 start_id),
+    bool fix_fingers(1: node new_node),
     void print_info(),
-    
+    node find_successor(1: i32 id),
+    node find_predecessor(1: i32 id),
+    void notify(1: node new_node)
+    node get_predecessor()
 }
