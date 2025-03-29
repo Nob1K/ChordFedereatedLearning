@@ -29,10 +29,10 @@ def get_files_in_directory(directory_path):
 
 def main():
     
-    if len(sys.argv) < 2:
-        print("python3 client.py <supernode_ip> <supernode_port>")
+    if len(sys.argv) < 3:
+        print("usage: python3 client.py <supernode_ip> <supernode_port>")
         return
-    training_files = get_files_in_directory("letters")[:5]
+    training_files = get_files_in_directory("letters")[-15:]
     # contact supernode and get connection point
     super_ip = sys.argv[1]
     super_port = int(sys.argv[2])
@@ -62,13 +62,13 @@ def main():
         for file in training_files:
             node_client.put_data(file)
         # sleep for a bit to wait for training
-        time.sleep(30)
+        time.sleep(60)
         # acquire and aggregate each model
         for file in training_files:
             model = node_client.get_model(file)
             while model.status == 1:
                 print(f"waiting for file {file}'s model to be done")
-                time.sleep(5)
+                time.sleep(8)
                 model = node_client.get_model(file)
             shared_v = ML.sum_matricies(shared_v, model.v)
             shared_w = ML.sum_matricies(shared_w, model.w)

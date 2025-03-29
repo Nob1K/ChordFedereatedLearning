@@ -97,7 +97,7 @@ class SupernodeHandler:
 def main():
     
     if len(sys.argv) < 2:
-        print("python3 supernode_server.py <port>")
+        print("usage: python3 supernode_server.py <port>")
         return
     input_port = int(sys.argv[1])
 

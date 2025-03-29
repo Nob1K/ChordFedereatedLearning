@@ -281,6 +281,7 @@ class ComputeHandler:
             protocol = TBinaryProtocol.TBinaryProtocol(transport)
             client = compute.Client(protocol)
             transport.open()
+            print(f"redirecting request to node {node.id}")
             model = client.get_model(filename)
             transport.close()
             return model
@@ -307,7 +308,7 @@ class ComputeHandler:
                     print(f" [{i}] - None")
                     
             print("\nStored Data Files:")
-            for file in self.data_files:
+            for file in self.models.keys():
                 print(f"  - {file}")
                 
             # print("\nStored Models:")
@@ -428,8 +429,8 @@ def start_server(port, super_ip, super_port):
     server.serve()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("python3 compute_server.py <supernode_ip> <supernode_port> <compute_port>")
+    if len(sys.argv) < 4:
+        print("usage: python3 compute_server.py <supernode_ip> <supernode_port> <compute_port>")
         sys.exit(1)
     super_ip = sys.argv[1]
     super_port = int(sys.argv[2])
