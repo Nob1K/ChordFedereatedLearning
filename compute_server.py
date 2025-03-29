@@ -224,14 +224,14 @@ class ComputeHandler:
 
     """store and train a data file on the node responsible"""
     def put_data(self, filename):
-        print(f"📥 Received put_data request for {filename} at node_id: {self.node_id}")
         hash = hash_to_number(filename)
+        print(f"📥 Received put_data request for {filename}(hash: {hash}) at node: {self.node_id}")
         # base case
-        if hash <= self.node_id and hash > self.predecessor.id:
-            print(f"file training at node {self.node_id}")
+        if self._is_between(hash, self.predecessor.id, self.node_id):
             model = ML.mlp()
-            model.init_training_random(filename, 26, 20)
-            model.train(0.0001, 250)
+            if model.init_training_random(filename, 26, 20):
+                print(f"file training at node {self.node_id}")
+                t_err = model.train(0.0001, 250)
             v, w = model.get_weights()
             curr_weights = weights(w, v, 0)
             with self.model_lock:
@@ -244,21 +244,22 @@ class ComputeHandler:
                 node = self.successor
             # forward to closest preceding finger  
             else:
-                node = finger["node"]
+                node = finger
             transport = TSocket.TSocket(node.ip, node.port)
             transport = TTransport.TBufferedTransport(transport)
             protocol = TBinaryProtocol.TBinaryProtocol(transport)
             client = compute.Client(protocol)
             transport.open()
+            print(f"redirecting file to node {node.id}")
             client.put_data(filename)
             transport.close()
                 
     """return a model weights for a given filename."""
     def get_model(self, filename):
-        print(f"📤 Received get_model request for {filename}")
         hash = hash_to_number(filename)
+        print(f"📤 Received get_model request for {filename} at node {self.node_id}, hash value: {hash}")
         # base case
-        if hash <= self.node_id and hash > self.predecessor.id:
+        if self._is_between(hash, self.predecessor.id, self.node_id):
             print(f"model resides at node {self.node_id}")
             with self.model_lock:
                 if filename in self.models.keys():
@@ -274,7 +275,7 @@ class ComputeHandler:
                 node = self.successor
             # forward to closest preceding finger  
             else:
-                node = finger["node"]
+                node = finger
             transport = TSocket.TSocket(node.ip, node.port)
             transport = TTransport.TBufferedTransport(transport)
             protocol = TBinaryProtocol.TBinaryProtocol(transport)
