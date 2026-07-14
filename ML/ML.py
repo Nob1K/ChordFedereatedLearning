@@ -1,7 +1,3 @@
-##  Written by Lucas Olsen for CSCI5105
-##  do not modify this file
-
-
 import csv
 import numpy as np
 
@@ -214,11 +210,6 @@ class mlp:
         self.momentum = _momentum
 
 
-##
-###  Propogation functions
-###  do not call these in your thrift code
-##
-
 
     # forwards propogate, build Z and Y
     def forward_propogate(self, _X):
@@ -272,11 +263,6 @@ class mlp:
 
         return X, labels
 
-
-##
-###  "Private" functions
-###  do not use these in your thrift code
-##
 
 
 # ReLU activation function
