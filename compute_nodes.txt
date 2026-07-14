@@ -1,3 +1,5 @@
-localhost, 9000
-localhost, 9001
-localhost, 9002
+login02.cselabs.umn.edu, 9000
+login02.cselabs.umn.edu, 9001
+login02.cselabs.umn.edu, 9002
+login02.cselabs.umn.edu, 9003
+login07.cselabs.umn.edu, 9004

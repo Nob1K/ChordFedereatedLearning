@@ -21,13 +21,15 @@ class node(object):
     Attributes:
      - ip
      - port
+     - id
 
     """
 
 
-    def __init__(self, ip=None, port=None,):
+    def __init__(self, ip=None, port=None, id=None,):
         self.ip = ip
         self.port = port
+        self.id = id
 
     def read(self, iprot):
         if iprot._fast_decode is not None and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None:
@@ -48,6 +50,11 @@ class node(object):
                     self.port = iprot.readI32()
                 else:
                     iprot.skip(ftype)
+            elif fid == 3:
+                if ftype == TType.I32:
+                    self.id = iprot.readI32()
+                else:
+                    iprot.skip(ftype)
             else:
                 iprot.skip(ftype)
             iprot.readFieldEnd()
@@ -65,6 +72,10 @@ class node(object):
         if self.port is not None:
             oprot.writeFieldBegin('port', TType.I32, 2)
             oprot.writeI32(self.port)
+            oprot.writeFieldEnd()
+        if self.id is not None:
+            oprot.writeFieldBegin('id', TType.I32, 3)
+            oprot.writeI32(self.id)
             oprot.writeFieldEnd()
         oprot.writeFieldStop()
         oprot.writeStructEnd()
@@ -87,6 +98,7 @@ node.thrift_spec = (
     None,  # 0
     (1, TType.STRING, 'ip', 'UTF8', None, ),  # 1
     (2, TType.I32, 'port', None, None, ),  # 2
+    (3, TType.I32, 'id', None, None, ),  # 3
 )
 fix_spec(all_structs)
 del all_structs
